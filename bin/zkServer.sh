@@ -149,7 +149,7 @@ if [ ! -w "$ZOO_LOG_DIR" ] ; then
 mkdir -p "$ZOO_LOG_DIR"
 fi
 
-ZOO_LOG_FILE=zookeeper-$USER-server-$HOSTNAME.log
+ZOO_LOG_FILE=${ZOO_LOG_FILE:-zookeeper-$USER-server-$HOSTNAME.log}
 _ZOO_DAEMON_OUT="$ZOO_LOG_DIR/zookeeper-$USER-server-$HOSTNAME.out"
 
 case $1 in
@@ -259,7 +259,12 @@ status)
           echo "Client port not found in the server configs"
         else
           if [[ "$clientPortAndAddress" =~ ^.*:[0-9]+ ]] ; then
-            clientPortAddress=`echo "$clientPortAndAddress" | sed -e 's/:.*//'`
+            if [[ "$clientPortAndAddress" =~ \[.*\]:[0-9]+ ]] ; then
+              # Extracts address from address:port for example extracts 127::1 from "[127::1]:2181"
+              clientPortAddress=`echo "$clientPortAndAddress" | sed -e 's|\[||' | sed -e 's|\]:.*||'`
+            else
+              clientPortAddress=`echo "$clientPortAndAddress" | sed -e 's/:.*//'`
+            fi
           fi
           clientPort=`echo "$clientPortAndAddress" | sed -e 's/.*://'`
         fi
@@ -271,6 +276,11 @@ status)
       if [ "$secureClientPort" ] ; then
         isSSL="true"
         clientPort=$secureClientPort
+        clientPortAddress=`$GREP "^[[:space:]]*secureClientPortAddress[^[:alpha:]]" "$ZOOCFG" | sed -e 's/.*=//'`
+        if ! [ $clientPortAddress ]
+        then
+            clientPortAddress="localhost"
+        fi
       else
         echo "Unable to find either secure or unsecure client port in any configs. Terminating."
         exit 1

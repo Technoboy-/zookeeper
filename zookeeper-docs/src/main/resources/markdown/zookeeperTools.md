@@ -1,5 +1,5 @@
 <!--
-Copyright 2002-2020 The Apache Software Foundation
+Copyright 2002-2021 The Apache Software Foundation
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,8 +24,14 @@ limitations under the License.
     * [zkTxnLogToolkit.sh](#zkTxnLogToolkit)
     * [zkSnapShotToolkit.sh](#zkSnapShotToolkit)
     * [zkSnapshotComparer.sh](#zkSnapshotComparer)
+
+* [Benchmark](#Benchmark)
+    * [YCSB](#YCSB)
+    * [zk-smoketest](#zk-smoketest)
     
 * [Testing](#Testing)
+    * [Fault Injection Framework](#fault-injection)
+        * [Byteman](#Byteman)
     * [Jepsen Test](#jepsen-test)
     
 <a name="Scripts"></a>
@@ -425,9 +431,183 @@ All layers compared.
 
 Or use `^c` to exit interactive mode anytime.
 
+
+<a name="Benchmark"></a>
+
+## Benchmark
+
+<a name="YCSB"></a>
+
+### YCSB
+
+#### Quick Start
+
+This section describes how to run YCSB on ZooKeeper.
+
+#### 1. Start ZooKeeper Server(s)
+
+#### 2. Install Java and Maven
+
+#### 3. Set Up YCSB
+
+Git clone YCSB and compile:
+
+    git clone http://github.com/brianfrankcooper/YCSB.git
+    # more details in the landing page for instructions on downloading YCSB(https://github.com/brianfrankcooper/YCSB#getting-started).
+    cd YCSB
+    mvn -pl site.ycsb:zookeeper-binding -am clean package -DskipTests
+
+#### 4. Provide ZooKeeper Connection Parameters
+
+Set connectString, sessionTimeout, watchFlag in the workload you plan to run.
+
+- `zookeeper.connectString`
+- `zookeeper.sessionTimeout`
+- `zookeeper.watchFlag`
+  * A parameter for enabling ZooKeeper's watch, optional values:true or false.the default value is false.
+  * This parameter cannot test the watch performance, but for testing what effect will take on the read/write requests when enabling the watch.
+
+      ```bash
+      ./bin/ycsb run zookeeper -s -P workloads/workloadb -p zookeeper.connectString=127.0.0.1:2181/benchmark -p zookeeper.watchFlag=true
+      ```
+
+Or, you can set configs with the shell command, EG:
+
+    # create a /benchmark namespace for sake of cleaning up the workspace after test.
+    # e.g the CLI:create /benchmark
+    ./bin/ycsb run zookeeper -s -P workloads/workloadb -p zookeeper.connectString=127.0.0.1:2181/benchmark -p zookeeper.sessionTimeout=30000
+
+#### 5. Load data and run tests
+
+Load the data:
+
+    # -p recordcount,the count of records/paths you want to insert
+    ./bin/ycsb load zookeeper -s -P workloads/workloadb -p zookeeper.connectString=127.0.0.1:2181/benchmark -p recordcount=10000 > outputLoad.txt
+
+Run the workload test:
+
+    # YCSB workloadb is the most suitable workload for read-heavy workload for the ZooKeeper in the real world.
+
+    # -p fieldlength, test the length of value/data-content took effect on performance
+    ./bin/ycsb run zookeeper -s -P workloads/workloadb -p zookeeper.connectString=127.0.0.1:2181/benchmark -p fieldlength=1000
+
+    # -p fieldcount
+    ./bin/ycsb run zookeeper -s -P workloads/workloadb -p zookeeper.connectString=127.0.0.1:2181/benchmark -p fieldcount=20
+
+    # -p hdrhistogram.percentiles,show the hdrhistogram benchmark result
+    ./bin/ycsb run zookeeper -threads 1 -P workloads/workloadb -p zookeeper.connectString=127.0.0.1:2181/benchmark -p hdrhistogram.percentiles=10,25,50,75,90,95,99,99.9 -p histogram.buckets=500
+
+    # -threads: multi-clients test, increase the **maxClientCnxns** in the zoo.cfg to handle more connections.
+    ./bin/ycsb run zookeeper -threads 10 -P workloads/workloadb -p zookeeper.connectString=127.0.0.1:2181/benchmark
+
+    # show the timeseries benchmark result
+    ./bin/ycsb run zookeeper -threads 1 -P workloads/workloadb -p zookeeper.connectString=127.0.0.1:2181/benchmark -p measurementtype=timeseries -p timeseries.granularity=50
+
+    # cluster test
+    ./bin/ycsb run zookeeper -P workloads/workloadb -p zookeeper.connectString=192.168.10.43:2181,192.168.10.45:2181,192.168.10.27:2181/benchmark
+
+    # test leader's read/write performance by setting zookeeper.connectString to leader's(192.168.10.43:2181)
+    ./bin/ycsb run zookeeper -P workloads/workloadb -p zookeeper.connectString=192.168.10.43:2181/benchmark
+
+    # test for large znode(by default: jute.maxbuffer is 1048575 bytes/1 MB ). Notice:jute.maxbuffer should also be set the same value in all the zk servers.
+    ./bin/ycsb run zookeeper -jvm-args="-Djute.maxbuffer=4194304" -s -P workloads/workloadc -p zookeeper.connectString=127.0.0.1:2181/benchmark
+
+    # Cleaning up the workspace after finishing the benchmark.
+    # e.g the CLI:deleteall /benchmark
+
+
+<a name="zk-smoketest"></a>
+
+### zk-smoketest
+
+**zk-smoketest** provides a simple smoketest client for a ZooKeeper ensemble. Useful for verifying new, updated,
+existing installations. More details are [here](https://github.com/phunt/zk-smoketest).
+
+
 <a name="Testing"></a>
 
 ## Testing
+
+<a name="fault-injection"></a>
+
+### Fault Injection Framework
+
+<a name="Byteman"></a>
+
+#### Byteman
+
+- **Byteman** is a tool which makes it easy to trace, monitor and test the behaviour of Java application and JDK runtime code.
+It injects Java code into your application methods or into Java runtime methods without the need for you to recompile, repackage or even redeploy your application.
+Injection can be performed at JVM startup or after startup while the application is still running.
+- Visit the official [website](https://byteman.jboss.org/) to download the latest release
+- A brief tutorial can be found [here](https://developer.jboss.org/wiki/ABytemanTutorial)
+
+    ```bash
+    Preparations:
+    # attach the byteman to 3 zk servers during runtime
+    # 55001,55002,55003 is byteman binding port; 714,740,758 is the zk server pid
+    ./bminstall.sh -b -Dorg.jboss.byteman.transform.all -Dorg.jboss.byteman.verbose -p 55001 714
+    ./bminstall.sh -b -Dorg.jboss.byteman.transform.all -Dorg.jboss.byteman.verbose -p 55002 740
+    ./bminstall.sh -b -Dorg.jboss.byteman.transform.all -Dorg.jboss.byteman.verbose -p 55003 758
+
+    # load the fault injection script
+    ./bmsubmit.sh -p 55002 -l my_zk_fault_injection.btm
+    # unload the fault injection script
+    ./bmsubmit.sh -p 55002 -u my_zk_fault_injectionr.btm
+    ```
+
+Look at the below examples to customize your byteman fault injection script
+
+Example 1: This script makes leader's zxid roll over, to force re-election.
+
+```bash
+cat zk_leader_zxid_roll_over.btm
+
+RULE trace zk_leader_zxid_roll_over
+CLASS org.apache.zookeeper.server.quorum.Leader
+METHOD propose
+IF true
+DO
+  traceln("*** Leader zxid has rolled over, forcing re-election ***");
+  $1.zxid = 4294967295L
+ENDRULE
+```
+
+Example 2: This script makes the leader drop the ping packet to a specific follower.
+The leader will close the **LearnerHandler** with that follower, and the follower will enter the state:LOOKING
+then re-enter the quorum with the state:FOLLOWING
+
+```bash
+cat zk_leader_drop_ping_packet.btm
+
+RULE trace zk_leader_drop_ping_packet
+CLASS org.apache.zookeeper.server.quorum.LearnerHandler
+METHOD ping
+AT ENTRY
+IF $0.sid == 2
+DO
+  traceln("*** Leader drops ping packet to sid: 2 ***");
+  return;
+ENDRULE
+```
+
+Example 3: This script makes one follower drop ACK packet which has no big effect in the broadcast phrase, since after receiving
+the majority of ACKs from the followers, the leader can commit that proposal
+
+```bash
+cat zk_leader_drop_ping_packet.btm
+
+RULE trace zk.follower_drop_ack_packet
+CLASS org.apache.zookeeper.server.quorum.SendAckRequestProcessor
+METHOD processRequest
+AT ENTRY
+IF true
+DO
+  traceln("*** Follower drops ACK packet ***");
+  return;
+ENDRULE
+```
+
 
 <a name="jepsen-test"></a>
 
